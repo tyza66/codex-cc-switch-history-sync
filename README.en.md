@@ -108,6 +108,14 @@ Read-only diagnosis of the current history state (writes nothing):
 python3 main.py doctor
 ```
 
+Open the GUI dashboard window (with "Sync now / Diagnose / Install autostart" buttons):
+
+```bash
+python3 main.py gui     # running with no subcommand also opens it
+```
+
+> Double-clicking the macOS `CodexHistorySync.app` opens this window.
+
 Run the background watcher manually:
 
 ```bash

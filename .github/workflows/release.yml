@@ -48,6 +48,7 @@ jobs:
         shell: bash
         run: |
           python -c "import codex_history_sync"
+          python -c "import tkinter, _tkinter; print('tkinter', tkinter.TkVersion)"
           python main.py --help
 
       - name: Build single-file binary

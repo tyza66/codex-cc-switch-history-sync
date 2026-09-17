@@ -8,6 +8,7 @@ Commands (run ``python main.py --help``):
     watch        run the watcher loop (used by autostart)
     run          manual sync with a progress/confirmation UI
     sync         headless sync only (no UI, no process management)
+    gui          open the GUI dashboard window (also the default with no args)
 """
 
 from __future__ import annotations
@@ -144,12 +145,18 @@ def cmd_doctor(args):
     return 0
 
 
+def cmd_gui(args):
+    """Open the GUI dashboard window."""
+    _set_codex_home_env(args.codex_home)
+    return ui.run_gui()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="codex-history-sync",
         description="Cross-platform Codex session history sync for cc-switch provider switches.",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     def add_home(p):
         p.add_argument("--codex-home", default=None, help="Codex home directory (default ~/.codex)")
@@ -196,12 +203,18 @@ def build_parser():
     add_home(p)
     p.set_defaults(func=cmd_doctor)
 
+    p = sub.add_parser("gui", help="open the GUI dashboard window")
+    add_home(p)
+    p.set_defaults(func=cmd_gui)
+
     return parser
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command is None:
+        return ui.run_gui(parser)
     return args.func(args)
 
 

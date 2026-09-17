@@ -111,6 +111,14 @@ python3 main.py repair --dry-run  # 只预览会改什么，不写入
 python3 main.py doctor
 ```
 
+打开图形界面主窗口（带「立即同步 / 诊断 / 安装自启动」按钮）：
+
+```bash
+python3 main.py gui     # 直接运行不带子命令也会打开
+```
+
+> 双击 macOS 的 `CodexHistorySync.app` 会打开这个窗口。
+
 手动运行后台 watcher：
 
 ```bash

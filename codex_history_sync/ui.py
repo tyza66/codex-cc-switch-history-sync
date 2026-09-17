@@ -8,11 +8,12 @@ thread while the UI thread pumps events.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 from pathlib import Path
 
-from . import actions, core, paths, processes, watcher
+from . import actions, autostart, backup_restore, core, doctor, paths, processes, repair, watcher
 
 
 # --------------------------------------------------------------------------- #
@@ -207,3 +208,150 @@ def run_sync_flow(automatic=False, provider_id=None, codex_home=None, ui=None):
     finally:
         watcher.release_lock(lock)
         ui.close()
+
+
+# --------------------------------------------------------------------------- #
+# GUI dashboard (launched when the app is opened without a subcommand)
+# --------------------------------------------------------------------------- #
+
+def _gui_status(home):
+    """Return (provider_id, target_provider, kind_label)."""
+    try:
+        target, provider_id, is_official = repair.detect_target_provider(home)
+    except Exception:
+        target, provider_id, is_official = core.TRANSIT_MODEL_PROVIDER, None, False
+    kind = "官方 (openai)" if is_official else "中转 (ccs)"
+    return provider_id or "(未检测到)", target, kind
+
+
+class TkMainWindow:
+    """A small dashboard window: sync / diagnose / install autostart."""
+
+    def __init__(self):
+        import tkinter as tk
+        from tkinter import scrolledtext
+        self._tk = tk
+        self.root = tk.Tk()
+        self.root.title("Codex History Sync")
+        self.root.geometry("580x420")
+        self.root.minsize(480, 320)
+        self.home = paths.codex_home()
+        # Keep core.run()'s JSON off stdout while in GUI mode.
+        os.environ["CODEX_HISTORY_SYNC_QUIET"] = "1"
+
+        header = tk.Frame(self.root, padx=14, pady=12)
+        header.pack(fill="x")
+        tk.Label(header, text="Codex History Sync", font=("Helvetica", 16, "bold")).pack(anchor="w")
+        self._provider_var = tk.StringVar(value="")
+        self._target_var = tk.StringVar(value="")
+        tk.Label(header, textvariable=self._provider_var, anchor="w").pack(fill="x", pady=(8, 0))
+        tk.Label(header, textvariable=self._target_var, anchor="w", fg="#555555").pack(fill="x")
+
+        buttons = tk.Frame(self.root, padx=14)
+        buttons.pack(fill="x")
+        self._sync_btn = tk.Button(buttons, text="立即同步", command=self._on_sync)
+        self._sync_btn.pack(side="left", padx=(0, 8))
+        self._diag_btn = tk.Button(buttons, text="诊断", command=self._on_diagnose)
+        self._diag_btn.pack(side="left", padx=(0, 8))
+        self._install_btn = tk.Button(buttons, text="安装自启动", command=self._on_install)
+        self._install_btn.pack(side="left", padx=(0, 8))
+        tk.Button(buttons, text="退出", command=self.root.destroy).pack(side="right")
+
+        self._log_box = scrolledtext.ScrolledText(
+            self.root, state="disabled", font=("Menlo", 11), padx=8, pady=8, wrap="word"
+        )
+        self._log_box.pack(fill="both", expand=True, padx=14, pady=(8, 14))
+
+        self._refresh_status()
+        self._log("就绪。点击「立即同步」同步历史，或「诊断」查看当前状态。")
+
+    # -- helpers --------------------------------------------------------------
+    def _log(self, text):
+        self._log_box.configure(state="normal")
+        self._log_box.insert("end", str(text) + "\n")
+        self._log_box.see("end")
+        self._log_box.configure(state="disabled")
+
+    def _set_busy(self, busy):
+        state = "disabled" if busy else "normal"
+        for btn in (self._sync_btn, self._diag_btn, self._install_btn):
+            btn.configure(state=state)
+
+    def _refresh_status(self):
+        provider_id, target, kind = _gui_status(self.home)
+        self._provider_var.set(f"当前 cc-switch provider: {provider_id}")
+        self._target_var.set(f"目标 model_provider: {target}  [{kind}]")
+
+    def _run_async(self, work, done, busy_msg):
+        self._set_busy(True)
+        self._log(busy_msg)
+
+        def runner():
+            value = error = None
+            try:
+                value = work()
+            except Exception as exc:  # noqa: BLE001
+                error = exc
+            self.root.after(0, lambda: done(value, error))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    # -- actions --------------------------------------------------------------
+    def _on_sync(self):
+        self._run_async(core.run, self._sync_done, "开始同步历史…")
+
+    def _sync_done(self, result, error):
+        self._set_busy(False)
+        self._refresh_status()
+        if error:
+            self._log(f"同步失败: {error}")
+            return
+        hist = result.get("history_repair") or {}
+        index = result.get("index") or {}
+        self._log("同步完成。")
+        self._log(f"  目标 provider: {result.get('target_model_provider')}")
+        self._log(f"  rollout 元数据更新: {result.get('rollout_meta_changed', 0)}")
+        self._log(f"  threads provider 更新: {hist.get('threads_provider_rows', 0)}")
+        self._log(f"  侧边栏目录 插入: {hist.get('catalog_inserted', 0)} / 删除: {hist.get('catalog_removed', 0)}")
+        self._log(f"  会话索引: {index.get('index_entries', 0)} 条")
+        self._log(f"  备份目录: {result.get('backup_dir')}")
+
+    def _on_diagnose(self):
+        self._run_async(lambda: doctor.run_diagnosis(self.home), self._diag_done, "诊断中…")
+
+    def _diag_done(self, report, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"诊断失败: {error}")
+            return
+        for line in doctor.format_report(report).splitlines():
+            self._log("  " + line)
+
+    def _on_install(self):
+        def work():
+            backup_dir = backup_restore.make_install_backup()
+            autostart.install()
+            autostart.start_now()
+            return backup_dir
+
+        self._run_async(work, self._install_done, "安装自启动并启动 watcher…")
+
+    def _install_done(self, backup_dir, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"安装失败: {error}")
+            return
+        self._log(f"已安装自启动并启动后台 watcher。备份: {backup_dir}")
+
+
+def run_gui(parser=None):
+    """Launch the dashboard window; fall back to help/console when headless."""
+    try:
+        window = TkMainWindow()
+    except Exception as exc:  # noqa: BLE001
+        if parser is not None:
+            parser.print_help(sys.stderr)
+        print(f"\n图形界面不可用（tkinter）: {exc}", file=sys.stderr)
+        return 1
+    window.root.mainloop()
+    return 0
