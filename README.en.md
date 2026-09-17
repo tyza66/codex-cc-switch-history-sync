@@ -119,8 +119,8 @@ python3 main.py watch
 Pushing a `v*` version tag builds a single-file executable on all three platforms and uploads them to the matching GitHub Release:
 
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+git tag v1.0.20260917
+git push origin v1.0.20260917
 ```
 
 Artifacts (`.github/workflows/release.yml`):
