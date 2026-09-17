@@ -203,6 +203,10 @@ python3 main.py restore --restore-latest-backup
 - 不清理 Codex 的 `logs_2.sqlite` 运行日志。
 - 不处理跨设备同步。
 
+## 图标
+
+应用图标来自 [cc-switch](https://github.com/farion1231/cc-switch)（[ccswitch.io](https://www.ccswitch.io/zh/)）。
+
 ## License
 
 MIT

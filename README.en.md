@@ -200,6 +200,10 @@ Notes:
 - Does not clean Codex `logs_2.sqlite` runtime logs.
 - Does not handle cross-device sync.
 
+## Icon
+
+The app icon comes from [cc-switch](https://github.com/farion1231/cc-switch) ([ccswitch.io](https://www.ccswitch.io/zh/)).
+
 ## License
 
 [MIT](LICENSE)

@@ -54,7 +54,11 @@ jobs:
       - name: Build single-file binary
         shell: bash
         run: |
-          python -m PyInstaller --onefile --clean --noconfirm \
+          ICON_ARGS=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ICON_ARGS="--icon icons/icon.ico"
+          fi
+          python -m PyInstaller --onefile --clean --noconfirm $ICON_ARGS \
             --name codex-history-sync main.py
 
       - name: Smoke test binary
@@ -88,8 +92,9 @@ jobs:
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           APP="CodexHistorySync.app"
-          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp dist/codex-history-sync "$APP/Contents/MacOS/codex-history-sync"
+          cp icons/icon.icns "$APP/Contents/Resources/icon.icns"
           cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -105,6 +110,8 @@ jobs:
             <string>codex-history-sync</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
+            <key>CFBundleIconFile</key>
+            <string>icon.icns</string>
             <key>CFBundleVersion</key>
             <string>$VERSION</string>
             <key>CFBundleShortVersionString</key>
@@ -154,24 +161,7 @@ jobs:
           Comment=Sync Codex session history across cc-switch providers
           EOF
 
-          python3 - <<'PY'
-          import struct, zlib
-
-          def chunk(typ, data):
-              c = struct.pack(">I", len(data)) + typ + data
-              return c + struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff)
-
-          w = h = 256
-          row = b"\x00" + b"\x4a\x90\xd9\xff" * w
-          raw = row * h
-          ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
-          png = (b"\x89PNG\r\n\x1a\n"
-                 + chunk(b"IHDR", ihdr)
-                 + chunk(b"IDAT", zlib.compress(raw))
-                 + chunk(b"IEND", b""))
-          open("icon.png", "wb").write(png)
-          PY
-          cp icon.png "$APPDIR/codex-history-sync.png"
+          cp icons/icon.png "$APPDIR/codex-history-sync.png"
 
           mkdir -p assets
           export APPIMAGE_EXTRACT_AND_RUN=1
