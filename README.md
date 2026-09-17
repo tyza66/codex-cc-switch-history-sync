@@ -2,7 +2,7 @@
 
 用于 **Codex 聊天记录同步**、**Codex 历史会话同步**、**Codex 会话记录同步** 的跨平台小工具（Windows / macOS / Linux）。它可以在使用 cc-switch 切换官方 / 中转 provider 时，尽量保持同一套本地 Codex 会话历史可见。
 
-> English: A cross-platform helper for Codex session history sync, Codex chat history sync, and keeping local Codex conversations visible when switching providers with cc-switch.
+> English: see [README.en.md](README.en.md).
 
 ## 本次更新目标
 
