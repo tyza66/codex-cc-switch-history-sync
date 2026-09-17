@@ -130,13 +130,13 @@ git push origin v1.0.20260917
 
 | 平台 | 产物 |
 |---|---|
-| Windows | `codex-history-sync-v*-windows-x64.zip`（内含 `.exe`） |
-| macOS | `codex-history-sync-v*-macos-arm64.tar.gz`（Apple Silicon，ad-hoc 签名） |
-| Linux | `codex-history-sync-v*-linux-x64.tar.gz` |
+| Windows | `codex-history-sync-v*-windows-x64.exe`（免安装单文件） |
+| macOS | `codex-history-sync-v*-macos-arm64.dmg`（Apple Silicon，内含 ad-hoc 签名的 `.app`） |
+| Linux | `codex-history-sync-v*-linux-x64.AppImage` |
 
 - `-rc` / `-beta` / `-alpha` tag 会自动标记为 pre-release。
-- macOS/Linux 二进制解压后需 `chmod +x`。
-- 未做代码签名，macOS 首次运行若被 Gatekeeper 拦截，右键「打开」或 `xattr -dr com.apple.quarantine <binary>`；Windows 可能触发 SmartScreen，点「仍要运行」即可。
+- Linux AppImage 首次运行前需 `chmod +x`；macOS `.dmg` 双击后把 `.app` 拖入「应用程序」。
+- macOS 为 ad-hoc 签名（无 Apple 开发者证书），首次运行若被 Gatekeeper 拦截，右键「打开」或 `xattr -dr com.apple.quarantine <app>`；Windows 未签名可能触发 SmartScreen，点「仍要运行」即可。
 
 所有命令都支持 `--codex-home <dir>` 覆盖 Codex 目录（默认 `~/.codex`）。
 

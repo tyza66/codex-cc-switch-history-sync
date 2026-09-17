@@ -127,13 +127,13 @@ Artifacts (`.github/workflows/release.yml`):
 
 | Platform | Artifact |
 |---|---|
-| Windows | `codex-history-sync-v*-windows-x64.zip` (contains `.exe`) |
-| macOS | `codex-history-sync-v*-macos-arm64.tar.gz` (Apple Silicon, ad-hoc signed) |
-| Linux | `codex-history-sync-v*-linux-x64.tar.gz` |
+| Windows | `codex-history-sync-v*-windows-x64.exe` (portable single file) |
+| macOS | `codex-history-sync-v*-macos-arm64.dmg` (Apple Silicon, ad-hoc signed `.app` inside) |
+| Linux | `codex-history-sync-v*-linux-x64.AppImage` |
 
 - `-rc` / `-beta` / `-alpha` tags are marked as pre-releases automatically.
-- The macOS/Linux binaries need `chmod +x` after extraction.
-- Binaries are unsigned: on macOS, right-click "Open" or `xattr -dr com.apple.quarantine <binary>` if Gatekeeper blocks the first run; on Windows, SmartScreen may appear — click "Run anyway".
+- The Linux AppImage needs `chmod +x` before first run; mount the macOS `.dmg` and drag the `.app` into Applications.
+- macOS is ad-hoc signed (no Apple Developer certificate): right-click "Open" or `xattr -dr com.apple.quarantine <app>` if Gatekeeper blocks the first run; Windows is unsigned and SmartScreen may appear — click "Run anyway".
 
 All commands accept `--codex-home <dir>` to override the Codex directory (default `~/.codex`).
 

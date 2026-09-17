@@ -20,15 +20,12 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
-            binary: codex-history-sync.exe
           - os: macos-latest
             platform: macos
             arch: arm64
-            binary: codex-history-sync
           - os: ubuntu-latest
             platform: linux
             arch: x64
-            binary: codex-history-sync
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,11 +35,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system Tcl/Tk (Linux)
+      - name: Install system Tcl/Tk + file (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk
+          sudo apt-get install -y python3-tk file
 
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
@@ -59,10 +56,6 @@ jobs:
           python -m PyInstaller --onefile --clean --noconfirm \
             --name codex-history-sync main.py
 
-      - name: Ad-hoc codesign (macOS)
-        if: runner.os == 'macOS'
-        run: codesign --force --sign - dist/codex-history-sync
-
       - name: Smoke test binary
         shell: bash
         run: |
@@ -72,19 +65,117 @@ jobs:
             ./dist/codex-history-sync --help
           fi
 
-      - name: Package artifact
+      # ------------------------------------------------------------------ #
+      # Windows: bare portable .exe
+      # ------------------------------------------------------------------ #
+      - name: Package Windows exe
+        if: runner.os == 'Windows'
         shell: bash
-        env:
-          ARCHIVE: codex-history-sync-${{ github.ref_name }}-${{ matrix.platform }}-${{ matrix.arch }}
         run: |
           mkdir -p assets
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            # GitHub Windows runners ship bsdtar, which can emit zip archives.
-            tar -a -c -f "assets/${ARCHIVE}.zip" -C dist "codex-history-sync.exe"
-          else
-            tar -czf "assets/${ARCHIVE}.tar.gz" -C dist "codex-history-sync"
-          fi
-          ls -la assets
+          cp dist/codex-history-sync.exe \
+            "assets/codex-history-sync-${{ github.ref_name }}-windows-x64.exe"
+
+      # ------------------------------------------------------------------ #
+      # macOS: .dmg containing an ad-hoc signed .app bundle
+      # ------------------------------------------------------------------ #
+      - name: Package macOS dmg
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          APP="CodexHistorySync.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp dist/codex-history-sync "$APP/Contents/MacOS/codex-history-sync"
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Codex History Sync</string>
+            <key>CFBundleDisplayName</key>
+            <string>Codex History Sync</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.codex.history-sync</string>
+            <key>CFBundleExecutable</key>
+            <string>codex-history-sync</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleVersion</key>
+            <string>$VERSION</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$VERSION</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$APP"
+          mkdir -p dmg_staging assets
+          cp -R "$APP" dmg_staging/
+          ln -s /Applications dmg_staging/Applications
+          hdiutil create -volname "Codex History Sync" \
+            -srcfolder dmg_staging -ov -format UDZO \
+            "assets/codex-history-sync-${{ github.ref_name }}-macos-arm64.dmg"
+
+      # ------------------------------------------------------------------ #
+      # Linux: .AppImage
+      # ------------------------------------------------------------------ #
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+          APPDIR="codex-history-sync.AppDir"
+          mkdir -p "$APPDIR"
+          cp dist/codex-history-sync "$APPDIR/"
+
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          exec "$APPDIR/codex-history-sync" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          cat > "$APPDIR/codex-history-sync.desktop" <<'EOF'
+          [Desktop Entry]
+          Name=Codex History Sync
+          Exec=codex-history-sync
+          Icon=codex-history-sync
+          Type=Application
+          Categories=Utility;
+          Comment=Sync Codex session history across cc-switch providers
+          EOF
+
+          python3 - <<'PY'
+          import struct, zlib
+
+          def chunk(typ, data):
+              c = struct.pack(">I", len(data)) + typ + data
+              return c + struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff)
+
+          w = h = 256
+          row = b"\x00" + b"\x4a\x90\xd9\xff" * w
+          raw = row * h
+          ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+          png = (b"\x89PNG\r\n\x1a\n"
+                 + chunk(b"IHDR", ihdr)
+                 + chunk(b"IDAT", zlib.compress(raw))
+                 + chunk(b"IEND", b""))
+          open("icon.png", "wb").write(png)
+          PY
+          cp icon.png "$APPDIR/codex-history-sync.png"
+
+          mkdir -p assets
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./appimagetool "$APPDIR" \
+            "assets/codex-history-sync-${{ github.ref_name }}-linux-x64.AppImage"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
