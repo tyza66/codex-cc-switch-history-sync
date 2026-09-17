@@ -1,0 +1,115 @@
+name: build-and-release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            binary: codex-history-sync.exe
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            binary: codex-history-sync
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            binary: codex-history-sync
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system Tcl/Tk (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Smoke test source
+        shell: bash
+        run: |
+          python -c "import codex_history_sync"
+          python main.py --help
+
+      - name: Build single-file binary
+        shell: bash
+        run: |
+          python -m PyInstaller --onefile --clean --noconfirm \
+            --name codex-history-sync main.py
+
+      - name: Ad-hoc codesign (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --force --sign - dist/codex-history-sync
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./dist/codex-history-sync.exe --help
+          else
+            ./dist/codex-history-sync --help
+          fi
+
+      - name: Package artifact
+        shell: bash
+        env:
+          ARCHIVE: codex-history-sync-${{ github.ref_name }}-${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          mkdir -p assets
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # GitHub Windows runners ship bsdtar, which can emit zip archives.
+            tar -a -c -f "assets/${ARCHIVE}.zip" -C dist "codex-history-sync.exe"
+          else
+            tar -czf "assets/${ARCHIVE}.tar.gz" -C dist "codex-history-sync"
+          fi
+          ls -la assets
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.arch }}
+          path: assets/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
