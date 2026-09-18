@@ -376,6 +376,118 @@ def rollout_id_from_name(path):
     return m.group(0) if m else stem
 
 
+def repair_rollout_first_lines(progress=None):
+    """Ensure the first line of every rollout JSONL is a ``session_meta`` entry.
+
+    Codex Desktop requires ``session_meta`` to be the very first line. When a
+    file starts with any other entry the session fails to restore with the
+    "does not start with session metadata" error.  This function:
+
+    1. Finds the ``session_meta`` line (scanning up to *max_search* lines).
+    2. If it is not at index 0, rewrites the file so that line comes first
+       while preserving the order of all other lines.
+    3. If no ``session_meta`` line exists at all, constructs one from the
+       available metadata and prepends it.
+
+    Returns a dict with ``scanned``, ``repaired``, ``prepended``, ``errors``.
+    """
+    max_search = 20
+    scanned = repaired = prepended = errors = 0
+
+    for path, _archived in iter_rollouts():
+        scanned += 1
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            errors += 1
+            continue
+
+        if not lines:
+            errors += 1
+            continue
+
+        # Check if the first line is already session_meta.
+        try:
+            first_obj = json.loads(lines[0])
+        except Exception:
+            first_obj = None
+        if first_obj and first_obj.get("type") == "session_meta":
+            continue
+
+        # Find the session_meta line within the first max_search lines.
+        meta_idx = None
+        for i, line in enumerate(lines[:max_search]):
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") == "session_meta":
+                meta_idx = i
+                break
+
+        if meta_idx is not None and meta_idx > 0:
+            # Move the session_meta line to the front.
+            meta_line = lines.pop(meta_idx)
+            lines.insert(0, meta_line)
+            try:
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                with tmp.open("w", encoding="utf-8", newline="") as f:
+                    f.writelines(lines)
+                os.replace(tmp, path)
+                repaired += 1
+            except Exception:
+                errors += 1
+        elif meta_idx is None:
+            # No session_meta line found — construct one from data in the file.
+            meta_payload = {}
+            for line in lines[:max_search]:
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                payload = obj.get("payload") or {}
+                if obj.get("type") == "session_meta":
+                    meta_payload.update(payload)
+                elif "model" in payload and "model" not in meta_payload:
+                    meta_payload["model"] = payload["model"]
+                if not meta_payload.get("session_id"):
+                    sid = payload.get("session_id")
+                    if sid:
+                        meta_payload["session_id"] = sid
+
+            filename_id = rollout_id_from_name(path)
+            meta_payload.setdefault("id", filename_id)
+            meta_payload.setdefault("session_id", filename_id)
+            meta_payload.setdefault("model", "gpt-5.5")
+            new_line = json.dumps(
+                {"type": "session_meta", "payload": meta_payload},
+                ensure_ascii=False, separators=(",", ":"),
+            ) + "\n"
+            try:
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                with tmp.open("w", encoding="utf-8", newline="") as f:
+                    f.write(new_line)
+                    f.writelines(lines)
+                os.replace(tmp, path)
+                prepended += 1
+            except Exception:
+                errors += 1
+
+        if progress and (repaired + prepended) % 10 == 0:
+            try:
+                progress(scanned, repaired, prepended)
+            except Exception:
+                pass
+
+    return {
+        "scanned": scanned,
+        "repaired": repaired,
+        "prepended": prepended,
+        "errors": errors,
+    }
+
+
 def rollout_thread_id(path, meta=None):
     """Return the authoritative thread id for a rollout.
 
@@ -614,7 +726,12 @@ def repair_state_db(target_provider, rewrite_provider, index_titles=None):
         existing[rid] = {"id": rid, "title": title}
     inserted = 0
     for rollout, archived in iter_rollouts():
-        rid = rollout_id_from_name(rollout)
+        try:
+            _ml = read_session_meta_line(rollout)
+            _pl = (_ml[2].get("payload") or {}) if _ml else {}
+        except Exception:
+            _pl = {}
+        rid = rollout_thread_id(rollout, _pl)
         if rid in existing:
             continue
         info = parse_rollout(rollout)
@@ -668,7 +785,12 @@ def rebuild_session_index(index_titles=None):
     rows = []
     seen = set()
     for rollout, archived in iter_rollouts():
-        rid = rollout_id_from_name(rollout)
+        try:
+            _ml = read_session_meta_line(rollout)
+            _pl = (_ml[2].get("payload") or {}) if _ml else {}
+        except Exception:
+            _pl = {}
+        rid = rollout_thread_id(rollout, _pl)
         if rid in seen:
             continue
         seen.add(rid)

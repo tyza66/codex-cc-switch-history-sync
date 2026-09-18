@@ -186,6 +186,56 @@ def _check_model_suffixes(home):
     return section, suffix["updated"] + logs > 0
 
 
+def _check_rollout_first_lines(home):
+    """Ensure every rollout JSONL starts with a session_meta line."""
+    section = _section("rollout 首行检查")
+    result = core.repair_rollout_first_lines()
+    _add(section, "扫描文件", str(result["scanned"]))
+    _add(section, "首行修复", str(result["repaired"]),
+         fixed=result["repaired"] > 0)
+    _add(section, "首行补全", str(result["prepended"]),
+         fixed=result["prepended"] > 0)
+    if result["errors"]:
+        _add(section, "处理失败", str(result["errors"]))
+    return section, result["repaired"] + result["prepended"] > 0
+
+
+def _clear_skipped_rollouts(home):
+    """Clear the rollout_migration_skipped_rollouts table so Codex Desktop
+    will re-read repaired rollout files."""
+    section = _section("跳过列表清理")
+    state_path = home / "state_5.sqlite"
+    if not state_path.exists():
+        _add(section, "state_5.sqlite 不存在", "—")
+        return section, False
+    import sqlite3
+    con = sqlite3.connect(str(state_path), timeout=10)
+    con.execute("PRAGMA busy_timeout=10000")
+    try:
+        tables = [r[0] for r in con.execute(
+            "select name from sqlite_master where type='table'").fetchall()]
+        if "rollout_migration_skipped_rollouts" not in tables:
+            _add(section, "跳过列表表不存在", "—")
+            return section, False
+        before = con.execute(
+            "select count(*) from rollout_migration_skipped_rollouts").fetchone()[0]
+        _add(section, "跳过条目", str(before))
+        if before > 0:
+            con.execute("delete from rollout_migration_skipped_rollouts")
+            con.commit()
+            after = con.execute(
+                "select count(*) from rollout_migration_skipped_rollouts").fetchone()[0]
+            _add(section, "已清除", f"{before} → {after}", fixed=True)
+        else:
+            _add(section, "无需清除", "0")
+        return section, before > 0
+    except Exception as exc:
+        _add(section, "操作失败", str(exc))
+        return section, False
+    finally:
+        con.close()
+
+
 def run_comprehensive_fix(home=None, progress_cb=None):
     """Run a comprehensive check-and-fix of the whole local Codex state.
 
@@ -236,11 +286,19 @@ def run_comprehensive_fix(home=None, progress_cb=None):
     sec, _ = _check_state_and_index(home, target_provider, rewrite)
     report["sections"].append(sec)
 
-    step(0.72, "修复侧边栏 / 全局状态")
+    step(0.65, "检查 rollout 首行")
+    sec, _ = _check_rollout_first_lines(home)
+    report["sections"].append(sec)
+
+    step(0.72, "清理跳过列表")
+    sec, _ = _clear_skipped_rollouts(home)
+    report["sections"].append(sec)
+
+    step(0.80, "修复侧边栏 / 全局状态")
     sec, _ = _check_catalog_and_global(home, target_provider)
     report["sections"].append(sec)
 
-    step(0.85, "清理模型后缀")
+    step(0.90, "清理模型后缀")
     sec, _ = _check_model_suffixes(home)
     report["sections"].append(sec)
 

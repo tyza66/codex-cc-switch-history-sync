@@ -230,3 +230,4 @@ The app icon comes from [cc-switch](https://github.com/farion1231/cc-switch) ([c
 ## License
 
 [MIT](LICENSE)
+Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup, sidebar catalogue, global state, model suffixes, session_index):

@@ -233,3 +233,4 @@ python3 main.py restore --restore-latest-backup
 ## License
 
 MIT
+全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理、侧边栏目录、全局状态、模型后缀、session_index）：
