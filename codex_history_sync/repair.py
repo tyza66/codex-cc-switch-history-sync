@@ -569,8 +569,9 @@ def _rollout_thread_metadata(home):
             # normally identical, but after a prior repair the payload id may
             # already have been rewritten to the filename form.
             ids = set()
-            if isinstance(payload.get("id"), str) and payload["id"]:
-                ids.add(payload["id"])
+            pid = payload.get("id")
+            if core.is_rollout_uuid(pid):
+                ids.add(pid)
             fid = core.rollout_id_from_name(path)
             if isinstance(fid, str) and fid:
                 ids.add(fid)

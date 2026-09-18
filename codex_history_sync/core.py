@@ -361,12 +361,37 @@ def normalize_current_config(current_provider_id, model_defaults=None):
     return False
 
 
+_ROLLOUT_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def is_rollout_uuid(value):
+    return isinstance(value, str) and _ROLLOUT_UUID_RE.fullmatch(value) is not None
+
+
 def rollout_id_from_name(path):
     stem = path.stem
-    parts = stem.split("-")
-    if len(parts) >= 6:
-        return "-".join(parts[-5:])
-    return stem
+    m = _ROLLOUT_UUID_RE.search(stem)
+    return m.group(0) if m else stem
+
+
+def rollout_thread_id(path, meta=None):
+    """Return the authoritative thread id for a rollout.
+
+    ``session_meta.payload.id`` is authoritative when it is a canonical UUID.
+    When a previous buggy ``rollout_id_from_name`` corrupted ``payload.id`` with
+    an underscore-joined suffix, fall back to ``session_id`` and finally the
+    first UUID in the filename.
+    """
+    payload = meta or {}
+    pid = payload.get("id")
+    if is_rollout_uuid(pid):
+        return pid
+    sid = payload.get("session_id")
+    if is_rollout_uuid(sid):
+        return sid
+    return rollout_id_from_name(path)
 
 
 def iter_rollouts():
@@ -432,7 +457,7 @@ def normalize_rollout_metadata(backup_dir, target_provider, rewrite_provider):
                 continue
             i, line, obj = meta_line
             payload = obj.get("payload") or {}
-            filename_id = rollout_id_from_name(path)
+            filename_id = rollout_thread_id(path, payload)
             provider_changed = rewrite_provider and payload.get("model_provider") != target_provider
             id_changed = payload.get("id") != filename_id
             if not provider_changed and not id_changed:
@@ -519,7 +544,7 @@ def parse_rollout(path):
     except Exception:
         pass
     stat = path.stat()
-    rid = rollout_id_from_name(path)
+    rid = rollout_thread_id(path, meta)
     created = first_ts or parse_iso(meta.get("timestamp")) or stat.st_ctime
     updated = max([x for x in (last_ts, stat.st_mtime) if x is not None])
     if not title:
