@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import actions, autostart, backup_restore, core, doctor, paths, processes, repair, watcher
+from . import actions, autostart, backup_restore, core, doctor, export_import, paths, processes, repair, watcher
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +225,7 @@ def _gui_status(home):
 
 
 class TkMainWindow:
-    """A small dashboard window: sync / diagnose / install autostart."""
+    """A small dashboard window: sync / diagnose / install autostart / export / import."""
 
     def __init__(self):
         import tkinter as tk
@@ -233,8 +233,8 @@ class TkMainWindow:
         self._tk = tk
         self.root = tk.Tk()
         self.root.title("Codex History Sync")
-        self.root.geometry("580x420")
-        self.root.minsize(480, 320)
+        self.root.geometry("580x440")
+        self.root.minsize(480, 340)
         self.home = paths.codex_home()
         # Keep core.run()'s JSON off stdout while in GUI mode.
         os.environ["CODEX_HISTORY_SYNC_QUIET"] = "1"
@@ -255,6 +255,10 @@ class TkMainWindow:
         self._diag_btn.pack(side="left", padx=(0, 8))
         self._install_btn = tk.Button(buttons, text="安装自启动", command=self._on_install)
         self._install_btn.pack(side="left", padx=(0, 8))
+        self._export_btn = tk.Button(buttons, text="导出记录", command=self._on_export)
+        self._export_btn.pack(side="left", padx=(0, 8))
+        self._import_btn = tk.Button(buttons, text="导入记录", command=self._on_import)
+        self._import_btn.pack(side="left", padx=(0, 8))
         tk.Button(buttons, text="退出", command=self.root.destroy).pack(side="right")
 
         self._log_box = scrolledtext.ScrolledText(
@@ -264,6 +268,7 @@ class TkMainWindow:
 
         self._refresh_status()
         self._log("就绪。点击「立即同步」同步历史，或「诊断」查看当前状态。")
+        self._log("「导出记录」/「导入记录」可备份与恢复聊天历史。")
 
     # -- helpers --------------------------------------------------------------
     def _log(self, text):
@@ -274,7 +279,7 @@ class TkMainWindow:
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"
-        for btn in (self._sync_btn, self._diag_btn, self._install_btn):
+        for btn in (self._sync_btn, self._diag_btn, self._install_btn, self._export_btn, self._import_btn):
             btn.configure(state=state)
 
     def _refresh_status(self):
@@ -342,6 +347,139 @@ class TkMainWindow:
             self._log(f"安装失败: {error}")
             return
         self._log(f"已安装自启动并启动后台 watcher。备份: {backup_dir}")
+
+    def _on_export(self):
+        from tkinter import filedialog, messagebox
+        default_name = export_import._default_export_name()
+        dest = filedialog.asksaveasfilename(
+            title="导出聊天记录到 zip",
+            initialdir=str(paths.home() / "Desktop") if paths.home().joinpath("Desktop").exists() else str(paths.home()),
+            initialfile=default_name,
+            defaultextension=".zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+        )
+        if not dest:
+            return
+
+        include = self._ask_include_dialog("选择要导出的内容")
+        if include is None:
+            return
+
+        def work():
+            return export_import.export_zip(
+                dest, home=self.home, include=include,
+                progress=lambda msg, done, total: self.root.after(0, lambda m=msg: self._log(m)),
+            )
+
+        self._run_async(work, self._export_done, f"开始导出到 {dest}…")
+
+    def _export_done(self, result, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"导出失败: {error}")
+            return
+        self._log(f"导出完成: {result.get('path')}")
+        self._log(f"  打包文件数: {result.get('files')}")
+
+    def _on_import(self):
+        from tkinter import filedialog, messagebox
+        src = filedialog.askopenfilename(
+            title="选择要导入的 zip 文件",
+            initialdir=str(paths.home() / "Desktop") if paths.home().joinpath("Desktop").exists() else str(paths.home()),
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+        )
+        if not src:
+            return
+
+        valid, errors, warnings, manifest = export_import.validate_zip(src)
+        if manifest:
+            self._log(f"zip 信息: format={manifest.get('format')} version={manifest.get('version')} "
+                      f"exported_at={manifest.get('exported_at')} files={manifest.get('files')}")
+        for w in warnings:
+            self._log(f"  警告: {w}")
+        if not valid:
+            for e in errors:
+                self._log(f"  错误: {e}")
+            messagebox.showerror("导入失败", "zip 结构校验失败，已拒绝导入。\n" + "\n".join(errors))
+            return
+
+        include = self._ask_include_dialog("选择要导入的内容")
+        if include is None:
+            return
+
+        if not messagebox.askyesno("确认导入",
+                                   "导入前会自动备份当前 Codex 状态。\n是否继续？"):
+            return
+
+        def work():
+            return export_import.import_zip(
+                src, home=self.home, include=include,
+                progress=lambda msg, done, total: self.root.after(0, lambda m=msg: self._log(m)),
+            )
+
+        self._run_async(work, self._import_done, f"开始导入 {src}…")
+
+    def _import_done(self, result, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"导入失败: {error}")
+            return
+        self._log(f"导入完成: {result.get('path')}")
+        self._log(f"  解压文件数: {result.get('files')}")
+        if result.get("backup_dir"):
+            self._log(f"  备份目录: {result.get('backup_dir')}")
+        for w in result.get("warnings") or []:
+            self._log(f"  警告: {w}")
+
+    def _ask_include_dialog(self, title):
+        """Open a small checkbox dialog for choosing export/import entries.
+
+        Returns a set of selected entries, or None if cancelled.
+        """
+        from tkinter import messagebox
+        popup = self._tk.Toplevel(self.root)
+        popup.title(title)
+        popup.transient(self.root)
+        popup.grab_set()
+        popup.resizable(False, False)
+
+        entries = [
+            ("sessions", "sessions/ (会话文件)"),
+            ("archived_sessions", "archived_sessions/ (归档会话)"),
+            ("session_index.jsonl", "session_index.jsonl (会话索引)"),
+            ("state_5.sqlite", "state_5.sqlite (状态数据库)"),
+            ("config.toml", "config.toml (配置文件)"),
+        ]
+        vars_ = {}
+        for key, label in entries:
+            var = self._tk.BooleanVar(value=True)
+            vars_[key] = var
+            self._tk.Checkbutton(popup, text=label, variable=var, anchor="w").pack(
+                fill="x", padx=14, pady=2
+            )
+
+        result = {"value": None}
+
+        def on_ok():
+            result["value"] = {k for k, v in vars_.items() if v.get()}
+            popup.destroy()
+
+        def on_cancel():
+            popup.destroy()
+
+        btns = self._tk.Frame(popup)
+        btns.pack(fill="x", padx=14, pady=(8, 10))
+        self._tk.Button(btns, text="确定", command=on_ok).pack(side="right", padx=(8, 0))
+        self._tk.Button(btns, text="取消", command=on_cancel).pack(side="right")
+
+        popup.update_idletasks()
+        w, h = 360, 240
+        x = (popup.winfo_screenwidth() - w) // 2
+        y = (popup.winfo_screenheight() - h) // 2
+        popup.geometry(f"{w}x{h}+{x}+{y}")
+
+        self.root.wait_window(popup)
+        return result["value"]
 
 
 def run_gui(parser=None):

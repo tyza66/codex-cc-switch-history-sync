@@ -111,13 +111,30 @@ python3 main.py repair --dry-run  # 只预览会改什么，不写入
 python3 main.py doctor
 ```
 
-打开图形界面主窗口（带「立即同步 / 诊断 / 安装自启动」按钮）：
+打开图形界面主窗口（带「立即同步 / 诊断 / 安装自启动 / 导出记录 / 导入记录」按钮）：
 
 ```bash
 python3 main.py gui     # 直接运行不带子命令也会打开
 ```
 
 > 双击 macOS 的 `CodexHistorySync.app` 会打开这个窗口。
+
+导出聊天记录到 zip（默认文件名带时间戳，可自定义保存位置；可选导出的内容）：
+
+```bash
+python3 main.py export                                    # 导出全部到 ~/Desktop/codex-history-<时间戳>.zip
+python3 main.py export -o ~/backup/my-history.zip         # 自定义路径和文件名
+python3 main.py export --include sessions,session_index.jsonl  # 只导出部分
+```
+
+从 zip 加载聊天记录（导入前先校验 zip 内部目录结构，不合法则拒绝；自动备份当前状态）：
+
+```bash
+python3 main.py import export.zip              # 校验并导入
+python3 main.py import --dry-run export.zip    # 仅校验，不写入
+python3 main.py import --include sessions export.zip  # 只导入部分
+python3 main.py import --no-backup export.zip  # 跳过自动备份（谨慎）
+```
 
 手动运行后台 watcher：
 

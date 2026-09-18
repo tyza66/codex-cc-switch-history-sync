@@ -108,13 +108,30 @@ Read-only diagnosis of the current history state (writes nothing):
 python3 main.py doctor
 ```
 
-Open the GUI dashboard window (with "Sync now / Diagnose / Install autostart" buttons):
+Open the GUI dashboard window (with "Sync now / Diagnose / Install autostart / Export / Import" buttons):
 
 ```bash
 python3 main.py gui     # running with no subcommand also opens it
 ```
 
 > Double-clicking the macOS `CodexHistorySync.app` opens this window.
+
+Export chat history to a zip file (default filename includes a timestamp; you can pick the save location and which entries to export):
+
+```bash
+python3 main.py export                                    # export everything to ~/Desktop/codex-history-<timestamp>.zip
+python3 main.py export -o ~/backup/my-history.zip         # custom path and filename
+python3 main.py export --include sessions,session_index.jsonl  # export only selected entries
+```
+
+Import chat history from a zip file (the zip's internal folder structure is validated before any write; the current Codex home is backed up automatically):
+
+```bash
+python3 main.py import export.zip              # validate and import
+python3 main.py import --dry-run export.zip    # validate only, write nothing
+python3 main.py import --include sessions export.zip  # import only selected entries
+python3 main.py import --no-backup export.zip  # skip automatic backup (use with care)
+```
 
 Run the background watcher manually:
 

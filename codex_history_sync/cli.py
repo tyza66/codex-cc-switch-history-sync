@@ -8,6 +8,10 @@ Commands (run ``python main.py --help``):
     watch        run the watcher loop (used by autostart)
     run          manual sync with a progress/confirmation UI
     sync         headless sync only (no UI, no process management)
+    export       export chat history to a zip file
+    import       import chat history from a zip file (validates structure first)
+    repair       repair local history indexes only (no config change)
+    doctor       read-only diagnosis of the local history state
     gui          open the GUI dashboard window (also the default with no args)
 """
 
@@ -17,8 +21,21 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
-from . import actions, autostart, backup_restore, core, doctor, paths, processes, repair, ui, watcher
+from . import (
+    actions,
+    autostart,
+    backup_restore,
+    core,
+    doctor,
+    export_import,
+    paths,
+    processes,
+    repair,
+    ui,
+    watcher,
+)
 
 
 def _set_codex_home_env(codex_home):
@@ -124,6 +141,74 @@ def cmd_sync(args):
     return 0
 
 
+def cmd_export(args):
+    """Export chat history to a zip file."""
+    _set_codex_home_env(args.codex_home)
+    home = paths.codex_home()
+    include = _parse_include(args.include)
+
+    if args.output:
+        dest = Path(args.output)
+    else:
+        dest = paths.home() / "Desktop" / export_import._default_export_name()
+        if not paths.home().joinpath("Desktop").exists():
+            dest = paths.home() / export_import._default_export_name()
+
+    dest = dest.expanduser().resolve()
+
+    def _progress(msg, done, total):
+        if os.environ.get("CODEX_HISTORY_SYNC_QUIET") != "1":
+            print(f"[{done}/{total}] {msg}")
+
+    result = export_import.export_zip(dest, home=home, include=include, progress=_progress)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_import(args):
+    """Import chat history from a zip file (validates structure first)."""
+    _set_codex_home_env(args.codex_home)
+    home = paths.codex_home()
+    include = _parse_include(args.include)
+    zip_path = Path(args.file).expanduser().resolve()
+
+    valid, errors, warnings, manifest = export_import.validate_zip(zip_path)
+    print(f"校验结果: {'通过' if valid else '失败'}")
+    if manifest:
+        print(f"  manifest format: {manifest.get('format')}  version: {manifest.get('version')}")
+        print(f"  exported_at: {manifest.get('exported_at')}")
+        print(f"  files: {manifest.get('files')}")
+    for w in warnings:
+        print(f"  警告: {w}")
+    if not valid:
+        for e in errors:
+            print(f"  错误: {e}", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        print("dry-run: 跳过实际导入。")
+        return 0
+
+    def _progress(msg, done, total):
+        if os.environ.get("CODEX_HISTORY_SYNC_QUIET") != "1":
+            print(f"[{done}/{total}] {msg}")
+
+    result = export_import.import_zip(
+        zip_path, home=home, include=include, progress=_progress, backup=args.backup
+    )
+    for w in result.get("warnings") or []:
+        print(f"  警告: {w}")
+    print(json.dumps({k: v for k, v in result.items() if k != "manifest"}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _parse_include(value):
+    if not value:
+        return None
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    return set(parts) if parts else None
+
+
 def cmd_repair(args):
     """Standalone history repair: rebuild the local history indexes without
     touching cc-switch provider config. Auto-detects the target provider from
@@ -190,6 +275,25 @@ def build_parser():
     add_home(p)
     p.add_argument("--quiet", action="store_true", help="suppress the JSON result output")
     p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("export", help="export chat history to a zip file")
+    add_home(p)
+    p.add_argument("-o", "--output", default=None,
+                   help="output zip path (default: ~/Desktop/codex-history-<timestamp>.zip)")
+    p.add_argument("--include", default=None,
+                   help="comma-separated entries to export: sessions,archived_sessions,session_index.jsonl,state_5.sqlite,config.toml (default: all)")
+    p.set_defaults(func=cmd_export)
+
+    p = sub.add_parser("import", help="import chat history from a zip file (validates structure first)")
+    add_home(p)
+    p.add_argument("file", help="zip file to import")
+    p.add_argument("--include", default=None,
+                   help="comma-separated entries to import (default: all present in zip)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="validate only, do not write")
+    p.add_argument("--no-backup", dest="backup", action="store_false",
+                   help="skip backing up the current Codex home before import")
+    p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("repair", help="repair local history indexes only (no config change)")
     add_home(p)
