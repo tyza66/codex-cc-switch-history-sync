@@ -11,6 +11,7 @@ Commands (run ``python main.py --help``):
     export       export chat history to a zip file
     import       import chat history from a zip file (validates structure first)
     repair       repair local history indexes only (no config change)
+    fix          comprehensive check-and-fix of the whole local Codex state
     doctor       read-only diagnosis of the local history state
     gui          open the GUI dashboard window (also the default with no args)
 """
@@ -29,6 +30,7 @@ from . import (
     backup_restore,
     core,
     doctor,
+    codex_fix,
     export_import,
     paths,
     processes,
@@ -222,6 +224,20 @@ def cmd_repair(args):
     return 0
 
 
+def cmd_fix(args):
+    """Comprehensive check-and-fix of the whole local Codex state."""
+    _set_codex_home_env(args.codex_home)
+    home = paths.codex_home()
+
+    def _progress(weight, msg):
+        if os.environ.get("CODEX_HISTORY_SYNC_QUIET") != "1":
+            print(f"[{int(weight*100):3d}%] {msg}")
+
+    report = codex_fix.run_comprehensive_fix(home, progress_cb=_progress)
+    print(codex_fix.format_report_text(report))
+    return 0
+
+
 def cmd_doctor(args):
     """Read-only diagnosis of the local history state (no writes)."""
     _set_codex_home_env(args.codex_home)
@@ -302,6 +318,10 @@ def build_parser():
     p.add_argument("--dry-run", action="store_true",
                    help="report what would change without writing")
     p.set_defaults(func=cmd_repair)
+
+    p = sub.add_parser("fix", help="comprehensive check-and-fix of the whole local Codex state")
+    add_home(p)
+    p.set_defaults(func=cmd_fix)
 
     p = sub.add_parser("doctor", help="read-only diagnosis of the local history state")
     add_home(p)

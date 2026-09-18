@@ -108,7 +108,13 @@ Read-only diagnosis of the current history state (writes nothing):
 python3 main.py doctor
 ```
 
-Open the GUI dashboard window (with "Sync now / Diagnose / Install autostart / Export / Import" buttons):
+Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, state databases, sidebar catalogue, global state, model suffixes, session_index):
+
+```bash
+python3 main.py fix
+```
+
+Open the GUI dashboard window (with "Sync now / Diagnose / Install autostart / Export / Import / Fix" buttons):
 
 ```bash
 python3 main.py gui     # running with no subcommand also opens it

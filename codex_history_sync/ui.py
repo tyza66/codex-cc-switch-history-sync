@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import actions, autostart, backup_restore, core, doctor, export_import, paths, processes, repair, watcher
+from . import actions, autostart, backup_restore, core, codex_fix, doctor, export_import, paths, processes, repair, watcher
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +225,7 @@ def _gui_status(home):
 
 
 class TkMainWindow:
-    """A small dashboard window: sync / diagnose / install autostart / export / import."""
+    """A small dashboard window: sync / diagnose / install autostart / export / import / Codex修复."""
 
     def __init__(self):
         import tkinter as tk
@@ -259,6 +259,8 @@ class TkMainWindow:
         self._export_btn.pack(side="left", padx=(0, 8))
         self._import_btn = tk.Button(buttons, text="导入记录", command=self._on_import)
         self._import_btn.pack(side="left", padx=(0, 8))
+        self._fix_btn = tk.Button(buttons, text="Codex修复", command=self._on_fix)
+        self._fix_btn.pack(side="left", padx=(0, 8))
         tk.Button(buttons, text="退出", command=self.root.destroy).pack(side="right")
 
         self._log_box = scrolledtext.ScrolledText(
@@ -279,7 +281,7 @@ class TkMainWindow:
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"
-        for btn in (self._sync_btn, self._diag_btn, self._install_btn, self._export_btn, self._import_btn):
+        for btn in (self._sync_btn, self._diag_btn, self._install_btn, self._export_btn, self._import_btn, self._fix_btn):
             btn.configure(state=state)
 
     def _refresh_status(self):
@@ -430,6 +432,42 @@ class TkMainWindow:
             self._log(f"  备份目录: {result.get('backup_dir')}")
         for w in result.get("warnings") or []:
             self._log(f"  警告: {w}")
+
+    def _on_fix(self):
+        try:
+            from tkinter import messagebox
+        except Exception:
+            messagebox = None
+        if messagebox is not None:
+            ok = messagebox.askyesno(
+                "Codex 全方位检查与修复",
+                "将检查并自动修复以下内容：\n"
+                "• config.toml (model_provider / 历史保存设置)\n"
+                "• cc-switch provider 数据库\n"
+                "• rollout 元数据\n"
+                "• state 数据库 (threads provider / cwd / 标题)\n"
+                "• 侧边栏目录 / 全局状态\n"
+                "• 模型窗口后缀\n"
+                "• session_index 重建\n\n"
+                "操作前会自动备份。是否继续？"
+            )
+            if not ok:
+                return
+
+        def work():
+            def progress(weight, msg):
+                self.root.after(0, lambda m=msg: self._log(f"  [{int(weight*100):3d}%] {m}"))
+            return codex_fix.run_comprehensive_fix(self.home, progress_cb=progress)
+
+        self._run_async(work, self._fix_done, "开始全方位检查与修复…")
+
+    def _fix_done(self, report, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"修复失败: {error}")
+            return
+        for line in codex_fix.format_report_text(report).splitlines():
+            self._log(line)
 
     def _ask_include_dialog(self, title):
         """Open a small checkbox dialog for choosing export/import entries.

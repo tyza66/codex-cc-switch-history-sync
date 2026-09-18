@@ -111,7 +111,13 @@ python3 main.py repair --dry-run  # 只预览会改什么，不写入
 python3 main.py doctor
 ```
 
-打开图形界面主窗口（带「立即同步 / 诊断 / 安装自启动 / 导出记录 / 导入记录」按钮）：
+全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、state 数据库、侧边栏目录、全局状态、模型后缀、session_index）：
+
+```bash
+python3 main.py fix
+```
+
+打开图形界面主窗口（带「立即同步 / 诊断 / 安装自启动 / 导出记录 / 导入记录 / Codex修复」按钮）：
 
 ```bash
 python3 main.py gui     # 直接运行不带子命令也会打开
