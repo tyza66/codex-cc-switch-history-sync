@@ -488,6 +488,123 @@ def repair_rollout_first_lines(progress=None):
     }
 
 
+_TOOL_PAYLOAD_TYPES = frozenset({
+    "function_call", "function_call_output", "tool_call", "tool_result",
+})
+
+
+def _count_tool_entries(lines):
+    """Count tool-related entries in a list of raw JSONL lines.
+
+    Returns ``(function_call_count, other_line_count)``.
+    """
+    fc = other = 0
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except Exception:
+            other += 1
+            continue
+        payload = obj.get("payload") or {}
+        if payload.get("type") in _TOOL_PAYLOAD_TYPES:
+            fc += 1
+        else:
+            other += 1
+    return fc, other
+
+
+def scan_tool_call_sessions(threshold=10):
+    """Scan all rollout files and report those with tool_call entries.
+
+    Returns a dict with ``sessions`` (list of dicts sorted by tool count
+    descending, filtered to those with >= threshold), ``total_sessions``,
+    ``affected_sessions``, and ``max_tool_count``.
+    """
+    sessions = []
+    total = 0
+    for path, archived in iter_rollouts():
+        total += 1
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            continue
+        fc, other = _count_tool_entries(lines)
+        if fc < threshold:
+            continue
+        info = parse_rollout(path)
+        sessions.append({
+            "path": str(path),
+            "thread_id": info.get("id", ""),
+            "title": info.get("title", "Untitled session"),
+            "archived": bool(archived),
+            "tool_call_count": fc,
+            "other_lines": other,
+            "total_lines": len(lines),
+        })
+    sessions.sort(key=lambda s: -s["tool_call_count"])
+    return {
+        "sessions": sessions,
+        "total_sessions": total,
+        "affected_sessions": len(sessions),
+        "max_tool_count": sessions[0]["tool_call_count"] if sessions else 0,
+        "threshold": threshold,
+    }
+
+
+def strip_tool_entries_from_rollout(path, progress=None):
+    """Remove ``function_call`` / ``tool_result`` entries from a rollout JSONL.
+
+    This is a **destructive** operation intended to unblock sessions that
+    enter an infinite retry loop because the active model does not support
+    tool calls.  Conversation text (user/assistant messages) is preserved;
+    only the tool interaction lines are dropped.
+
+    Returns ``{"path": ..., "removed": n, "kept": n, "backup": path}``.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+
+    backup = path.with_suffix(path.suffix + ".toolstrip-bak")
+    shutil.copy2(str(path), str(backup))
+
+    with path.open("r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    kept_lines = []
+    removed = 0
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except Exception:
+            kept_lines.append(line)
+            continue
+        payload = obj.get("payload") or {}
+        if payload.get("type") in _TOOL_PAYLOAD_TYPES:
+            removed += 1
+            continue
+        kept_lines.append(line)
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="") as f:
+        f.writelines(kept_lines)
+    os.replace(tmp, path)
+
+    if progress:
+        try:
+            progress(removed, len(kept_lines))
+        except Exception:
+            pass
+
+    return {
+        "path": str(path),
+        "removed": removed,
+        "kept": len(kept_lines),
+        "backup": str(backup),
+    }
+
+
 def rollout_thread_id(path, meta=None):
     """Return the authoritative thread id for a rollout.
 

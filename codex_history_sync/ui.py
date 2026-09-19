@@ -261,6 +261,8 @@ class TkMainWindow:
         self._import_btn.pack(side="left", padx=(0, 8))
         self._fix_btn = tk.Button(buttons, text="Codex修复", command=self._on_fix)
         self._fix_btn.pack(side="left", padx=(0, 8))
+        self._strip_btn = tk.Button(buttons, text="清理工具调用", command=self._on_strip_tools)
+        self._strip_btn.pack(side="left", padx=(0, 8))
         tk.Button(buttons, text="退出", command=self.root.destroy).pack(side="right")
 
         self._log_box = scrolledtext.ScrolledText(
@@ -271,6 +273,7 @@ class TkMainWindow:
         self._refresh_status()
         self._log("就绪。点击「立即同步」同步历史，或「诊断」查看当前状态。")
         self._log("「导出记录」/「导入记录」可备份与恢复聊天历史。")
+        self._log("「清理工具调用」可剥离指定会话的 function_call 条目，修复无限重试卡死。")
 
     # -- helpers --------------------------------------------------------------
     def _log(self, text):
@@ -281,7 +284,7 @@ class TkMainWindow:
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"
-        for btn in (self._sync_btn, self._diag_btn, self._install_btn, self._export_btn, self._import_btn, self._fix_btn):
+        for btn in (self._sync_btn, self._diag_btn, self._install_btn, self._export_btn, self._import_btn, self._fix_btn, self._strip_btn):
             btn.configure(state=state)
 
     def _refresh_status(self):
@@ -470,6 +473,55 @@ class TkMainWindow:
             return
         for line in codex_fix.format_report_text(report).splitlines():
             self._log(line)
+
+    def _on_strip_tools(self):
+        from tkinter import filedialog, messagebox
+        src = filedialog.askopenfilename(
+            title="选择要清理 tool_call 的 rollout 文件",
+            initialdir=str(self.home / "sessions"),
+            filetypes=[("JSONL rollout", "*.jsonl"), ("All files", "*.*")],
+        )
+        if not src:
+            return
+
+        valid, errors, _warn, _m = export_import.validate_zip(src)  # noqa: F841
+        # Quick check: does the file have tool entries?
+        try:
+            with open(src, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            fc, other = core._count_tool_entries(lines)
+        except Exception as exc:
+            messagebox.showerror("读取失败", str(exc))
+            return
+
+        if fc == 0:
+            messagebox.showinfo("无需清理", "该文件中未发现 function_call / tool_result 条目。")
+            return
+
+        if not messagebox.askyesno(
+            "确认清理",
+            f"将在以下文件中删除 {fc} 条 function_call / tool_result 条目：\n"
+            f"{src}\n\n"
+            f"保留 {other} 条其他记录（对话文本等）。\n"
+            f"操作前会自动备份为 .toolstrip-bak。\n\n"
+            f"此操作不可撤销（但有备份），是否继续？"
+        ):
+            return
+
+        def work():
+            return core.strip_tool_entries_from_rollout(src)
+
+        self._run_async(work, self._strip_done, f"正在清理 {src}…")
+
+    def _strip_done(self, result, error):
+        self._set_busy(False)
+        if error:
+            self._log(f"清理失败: {error}")
+            return
+        self._log(f"清理完成: {result.get('path')}")
+        self._log(f"  删除 tool 条目: {result.get('removed')}")
+        self._log(f"  保留记录: {result.get('kept')}")
+        self._log(f"  备份: {result.get('backup')}")
 
     def _ask_include_dialog(self, title):
         """Open a small checkbox dialog for choosing export/import entries.

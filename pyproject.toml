@@ -16,3 +16,4 @@ codex-history-sync = "codex_history_sync.cli:main"
 
 [tool.setuptools]
 packages = ["codex_history_sync"]
+version = "1.0.20260919"

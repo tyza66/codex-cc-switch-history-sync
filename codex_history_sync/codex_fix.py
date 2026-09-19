@@ -236,6 +236,24 @@ def _clear_skipped_rollouts(home):
         con.close()
 
 
+def _check_tool_calls(home, threshold=50):
+    """Report sessions with heavy tool_call history that may cause infinite
+    retry loops when the active model does not support function calling."""
+    section = _section("tool_call 诊断")
+    result = core.scan_tool_call_sessions(threshold=threshold)
+    _add(section, "扫描会话总数", str(result["total_sessions"]))
+    _add(section, f"tool_call ≥ {threshold} 的会话", str(result["affected_sessions"]),
+         fixed=result["affected_sessions"] > 0)
+    if result["affected_sessions"] > 0:
+        _add(section, "最高 tool_call 数量", str(result["max_tool_count"]))
+        for s in result["sessions"][:5]:
+            tag = "[归档]" if s["archived"] else ""
+            _add(section,
+                 f"  {s['tool_call_count']} calls  {tag}{s['title'][:40]}",
+                 s["thread_id"][:16] + "…")
+    return section, result["affected_sessions"] > 0
+
+
 def run_comprehensive_fix(home=None, progress_cb=None):
     """Run a comprehensive check-and-fix of the whole local Codex state.
 
@@ -300,6 +318,10 @@ def run_comprehensive_fix(home=None, progress_cb=None):
 
     step(0.90, "清理模型后缀")
     sec, _ = _check_model_suffixes(home)
+    report["sections"].append(sec)
+
+    step(0.95, "诊断 tool_call")
+    sec, _ = _check_tool_calls(home)
     report["sections"].append(sec)
 
     step(1.0, "完成")

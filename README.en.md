@@ -139,6 +139,14 @@ python3 main.py import --include sessions export.zip  # import only selected ent
 python3 main.py import --no-backup export.zip  # skip automatic backup (use with care)
 ```
 
+Strip tool_call entries from a specific rollout (when a model that does not support function_call causes infinite retries):
+
+```bash
+python3 main.py strip-tools ~/.codex/sessions/2026/09/19/rollout-xxxx.jsonl
+```
+
+A `.toolstrip-bak` backup is created automatically. This removes `function_call` / `tool_result` entries but keeps conversation text. It is irreversible (but the backup can be restored).
+
 Run the background watcher manually:
 
 ```bash
@@ -231,3 +239,4 @@ The app icon comes from [cc-switch](https://github.com/farion1231/cc-switch) ([c
 
 [MIT](LICENSE)
 Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup, sidebar catalogue, global state, model suffixes, session_index):
+Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup, sidebar catalogue, global state, model suffixes, session_index, tool_call diagnostics):

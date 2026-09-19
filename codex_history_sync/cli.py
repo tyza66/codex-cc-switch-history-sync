@@ -246,6 +246,14 @@ def cmd_doctor(args):
     return 0
 
 
+def cmd_strip_tools(args):
+    """Strip function_call/tool_result entries from a rollout jsonl."""
+    _set_codex_home_env(args.codex_home)
+    result = core.strip_tool_entries_from_rollout(Path(args.rollout).expanduser().resolve())
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_gui(args):
     """Open the GUI dashboard window."""
     _set_codex_home_env(args.codex_home)
@@ -322,6 +330,11 @@ def build_parser():
     p = sub.add_parser("fix", help="comprehensive check-and-fix of the whole local Codex state")
     add_home(p)
     p.set_defaults(func=cmd_fix)
+
+    p = sub.add_parser("strip-tools", help="strip function_call/tool_result entries from a rollout to fix infinite retry")
+    add_home(p)
+    p.add_argument("rollout", help="path to the rollout .jsonl file")
+    p.set_defaults(func=cmd_strip_tools)
 
     p = sub.add_parser("doctor", help="read-only diagnosis of the local history state")
     add_home(p)

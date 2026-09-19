@@ -142,6 +142,14 @@ python3 main.py import --include sessions export.zip  # 只导入部分
 python3 main.py import --no-backup export.zip  # 跳过自动备份（谨慎）
 ```
 
+清理指定会话的 tool_call 条目（模型不支持 function_call 导致无限重试时）：
+
+```bash
+python3 main.py strip-tools ~/.codex/sessions/2026/09/19/rollout-xxxx.jsonl
+```
+
+操作前自动备份为 `.toolstrip-bak`。此操作会删除 `function_call` / `tool_result` 条目但保留对话文本，不可撤销（但有备份）。
+
 手动运行后台 watcher：
 
 ```bash
@@ -234,3 +242,4 @@ python3 main.py restore --restore-latest-backup
 
 MIT
 全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理、侧边栏目录、全局状态、模型后缀、session_index）：
+全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理、侧边栏目录、全局状态、模型后缀、session_index、tool_call 诊断）：
