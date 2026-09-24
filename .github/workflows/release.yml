@@ -20,12 +20,18 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
+          - os: macos-13
+            platform: macos
+            arch: x64
           - os: macos-latest
             platform: macos
             arch: arm64
           - os: ubuntu-latest
             platform: linux
             arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,7 +133,7 @@ jobs:
           ln -s /Applications dmg_staging/Applications
           hdiutil create -volname "Codex History Sync" \
             -srcfolder dmg_staging -ov -format UDZO \
-            "assets/codex-history-sync-${{ github.ref_name }}-macos-arm64.dmg"
+            "assets/codex-history-sync-${{ github.ref_name }}-macos-${{ matrix.arch }}.dmg"
 
       # ------------------------------------------------------------------ #
       # Linux: .AppImage
@@ -137,9 +143,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o appimagetool \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            APPIMAGE_TOOL="appimagetool-aarch64.AppImage"
+          else
+            APPIMAGE_TOOL="appimagetool-x86_64.AppImage"
+          fi
+          curl -fsSL --retry 3 -o "$APPIMAGE_TOOL" \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/$APPIMAGE_TOOL"
+          chmod +x "$APPIMAGE_TOOL"
 
           APPDIR="codex-history-sync.AppDir"
           mkdir -p "$APPDIR"
@@ -165,8 +176,8 @@ jobs:
 
           mkdir -p assets
           export APPIMAGE_EXTRACT_AND_RUN=1
-          ./appimagetool "$APPDIR" \
-            "assets/codex-history-sync-${{ github.ref_name }}-linux-x64.AppImage"
+          "./$APPIMAGE_TOOL" "$APPDIR" \
+            "assets/codex-history-sync-${{ github.ref_name }}-linux-${{ matrix.arch }}.AppImage"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

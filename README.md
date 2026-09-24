@@ -161,8 +161,8 @@ python3 main.py watch
 推一个 `v*` 版本 tag 会自动在三个平台各打一个单文件可执行包，并上传到对应的 GitHub Release：
 
 ```bash
-git tag v1.0.20260917
-git push origin v1.0.20260917
+git tag v1.0.20260924
+git push origin v1.0.20260924
 ```
 
 产物（`.github/workflows/release.yml`）：

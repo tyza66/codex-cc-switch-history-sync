@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-cc-switch-history-sync"
-version = "1.0.20260917"
+version = "1.0.20260924"
 description = "Cross-platform Codex session history sync for cc-switch provider switches"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -16,4 +16,4 @@ codex-history-sync = "codex_history_sync.cli:main"
 
 [tool.setuptools]
 packages = ["codex_history_sync"]
-version = "1.0.20260919"
+version = "1.0.20260924"
