@@ -13,6 +13,9 @@ jobs:
   build:
     name: Build (${{ matrix.platform }} ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    # Safety net: every platform builds in well under a minute, so a job
+    # still running after 30 minutes is wedged rather than merely slow.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -20,9 +23,13 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
-          - os: macos-13
-            platform: macos
-            arch: x64
+          # NOTE: macos-13 (Intel) is deliberately absent. On this account
+          # that runner is assigned but never comes up, leaving the job with
+          # zero executed steps indefinitely. Since `needs: build` can never
+          # resolve, it blocked the release job and stopped v1.0.20260924
+          # from ever publishing. continue-on-error does not help here: it
+          # only applies once a job actually finishes. Re-add it once Intel
+          # runners are reliably available.
           - os: macos-latest
             platform: macos
             arch: arm64
