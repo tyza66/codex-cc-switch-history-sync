@@ -35,6 +35,7 @@ This tool will:
 - Watch cc-switch's current Codex provider for changes.
 - Scan the Codex providers present in cc-switch at runtime: official OpenAI stays `openai`, all relays are written uniformly as `ccs`.
 - Repair the Codex local history index and SQLite state.
+- Fixes `Model provider ... not found` when restoring a conversation: if the provider named by `model_provider` in `config.toml` has no matching `[model_providers.<id>]` block, `fix` backfills it (reusing `base_url` from an existing block when there is one, and skipping official `openai`).
 - Support the newer Codex multi-database layout: `~/.codex/sqlite/*.db` (`threads` / `local_thread_catalog` / `messages` / `sessions`, …), not just the legacy `state_5.sqlite`.
 - Repair the `local_thread_catalog` sidebar catalogue (insert missing rows, delete subagent rows).
 - Normalize `.codex-global-state.json` (workspace roots / thread IDs / path dedup).
@@ -108,7 +109,7 @@ Read-only diagnosis of the current history state (writes nothing):
 python3 main.py doctor
 ```
 
-Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, state databases, sidebar catalogue, global state, model suffixes, session_index):
+Comprehensive check-and-fix of the whole local Codex state (config.toml `model_providers` block backfill, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup across `sqlite/*.db` and `state_5.sqlite`, sidebar catalogue, global state, model suffixes, session_index, tool_call diagnostics):
 
 ```bash
 python3 main.py fix
@@ -238,5 +239,3 @@ The app icon comes from [cc-switch](https://github.com/farion1231/cc-switch) ([c
 ## License
 
 [MIT](LICENSE)
-Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup, sidebar catalogue, global state, model suffixes, session_index):
-Comprehensive check-and-fix of the whole local Codex state (config.toml, cc-switch DB, rollout metadata, rollout first-line repair, state databases, skipped-rollouts cleanup, sidebar catalogue, global state, model suffixes, session_index, tool_call diagnostics):

@@ -38,6 +38,7 @@ Codex 的本地历史会同时依赖 rollout 文件、`state_5.sqlite` 和 `sess
 - 监听 cc-switch 的当前 Codex provider 变化。
 - 运行时扫描 cc-switch 中现有的 Codex provider：官方 OpenAI 保持 `openai`，其余中转统一写成 `ccs`。
 - 修复 Codex 本地历史索引和 SQLite 状态。
+- 修复恢复对话时报 `Model provider ... not found`：`config.toml` 里的 `model_provider` 指向的 provider 若没有对应的 `[model_providers.<id>]` 块，`fix` 会自动补全（有现成块时沿用其 `base_url`，官方 `openai` 跳过）。
 - 兼容新版 Codex 的多数据库布局：`~/.codex/sqlite/*.db`（`threads` / `local_thread_catalog` / `messages` / `sessions` 等），而不只是旧的 `state_5.sqlite`。
 - 修复 `local_thread_catalog` 侧边栏目录（补缺失行、删除子代理行）。
 - 归一化 `.codex-global-state.json`（工作区根目录 / 线程 ID / 路径去重）。
@@ -111,7 +112,7 @@ python3 main.py repair --dry-run  # 只预览会改什么，不写入
 python3 main.py doctor
 ```
 
-全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、state 数据库、侧边栏目录、全局状态、模型后缀、session_index）：
+全方位检查并自动修复整个 Codex 本地状态（config.toml 的 `model_providers` 块补全、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理（`sqlite/*.db` 与 `state_5.sqlite`）、侧边栏目录、全局状态、模型后缀、session_index、tool_call 诊断）：
 
 ```bash
 python3 main.py fix
@@ -241,5 +242,3 @@ python3 main.py restore --restore-latest-backup
 ## License
 
 MIT
-全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理、侧边栏目录、全局状态、模型后缀、session_index）：
-全方位检查并自动修复整个 Codex 本地状态（config.toml、cc-switch DB、rollout 元数据、rollout 首行修复、state 数据库、跳过列表清理、侧边栏目录、全局状态、模型后缀、session_index、tool_call 诊断）：
