@@ -269,12 +269,76 @@ def normalize_active_model_provider_block(text, target_provider):
     return re.sub(pattern, f"[model_providers.{target_provider}]", text, count=1)
 
 
+def _iter_model_provider_blocks(text):
+    """Yield ``(provider_name, block_text)`` for each ``[model_providers.X]`` table.
+
+    ``block_text`` retains the original header line so a whole block can be copied
+    verbatim.
+    """
+    lines = (text or "").splitlines()
+    starts = []
+    for i, line in enumerate(lines):
+        m = re.match(r'^\s*\[model_providers\.([^\]\s]+)\]\s*$', line)
+        if m:
+            starts.append((i, m.group(1)))
+    for idx, (start, name) in enumerate(starts):
+        end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lines)
+        yield name, "\n".join(lines[start:end])
+
+
+def has_model_provider_block(text, provider):
+    return any(name == provider for name, _ in _iter_model_provider_blocks(text))
+
+
+def extract_model_provider_block(text, provider):
+    for name, block in _iter_model_provider_blocks(text):
+        if name == provider:
+            return block
+    return None
+
+
+def ensure_model_provider_block(text, provider, source_provider=None):
+    """Ensure ``[model_providers.<provider>]`` exists.
+
+    When missing, copy an existing provider block (preferring ``source_provider``
+    when provided, otherwise the first available block) so the synthesized block
+    keeps a real ``base_url`` and credentials. Never fabricates a block when there
+    is nothing to copy from, which would yield a provider without ``base_url``.
+    """
+    text = text or ""
+    if has_model_provider_block(text, provider):
+        return text
+
+    source_block = None
+    if source_provider and source_provider != provider:
+        source_block = extract_model_provider_block(text, source_provider)
+    if source_block is None:
+        for name, block in _iter_model_provider_blocks(text):
+            if name != provider:
+                source_block = block
+                break
+    if source_block is None:
+        return text
+
+    new_block = re.sub(
+        r'(?m)^\s*\[model_providers\.[^\]\s]+\]\s*$',
+        f'[model_providers.{provider}]',
+        source_block,
+        count=1,
+    ).rstrip()
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return text + "\n" + new_block + "\n"
+
+
 def normalize_codex_config(text, target_provider=None):
     text = strip_disable_storage(text)
     text = ensure_history_save_all(text)
     if target_provider:
         text = normalize_active_model_provider_block(text, target_provider)
         text = ensure_model_provider(text, target_provider)
+        if target_provider != OFFICIAL_MODEL_PROVIDER:
+            text = ensure_model_provider_block(text, target_provider)
     return text
 
 

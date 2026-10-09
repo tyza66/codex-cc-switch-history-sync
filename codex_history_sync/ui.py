@@ -445,12 +445,12 @@ class TkMainWindow:
             ok = messagebox.askyesno(
                 "Codex 全方位检查与修复",
                 "将检查并自动修复以下内容：\n"
-                "• config.toml (model_provider / 历史保存设置)\n"
+                "• config.toml (model_provider / provider 块 / 历史保存设置)\n"
                 "• cc-switch provider 数据库\n"
                 "• rollout 元数据\n"
                 "• rollout 首行修复 (确保首行是 session_meta)\n"
                 "• state 数据库 (threads provider / cwd / 标题)\n"
-                "• 跳过列表清理 (rollout_migration_skipped_rollouts)\n"
+                "• 跳过列表清理 (sqlite/*.db 与 state_5.sqlite)\n"
                 "• 侧边栏目录 / 全局状态\n"
                 "• 模型窗口后缀\n"
                 "• session_index 重建\n\n"

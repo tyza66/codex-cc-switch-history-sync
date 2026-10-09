@@ -54,6 +54,30 @@ python3 main.py run
 
 If `CODEX_HOME` is not set, the default is `~/.codex`. Use `--codex-home <dir>` to override.
 
+## Restoring a conversation fails with `Model provider ... not found`
+
+After Codex or cc-switch updates, a restored thread whose session metadata still
+references an old provider can refuse to load:
+
+```text
+ChatGPT 无法加载 config.toml，因此此对话串无法继续。
+请修复 config.toml: Model provider `ccs` not found。
+```
+
+This means `~/.codex/config.toml` points `model_provider` at a provider that has no
+matching `[model_providers.<name>]` block, or the rollout skip list
+(`rollout_migration_skipped_rollouts`) still marks the repaired files as skipped.
+Newer Codex builds keep that skip list under `~/.codex/sqlite/*.db` instead of the
+legacy `state_5.sqlite`.
+
+Run the one-click fix, which backfills the missing provider block (copying a real
+`base_url`, never inventing an empty one) and clears the skip list across every state
+database:
+
+```bash
+python3 main.py fix
+```
+
 ## The model list still does not show GPT-5.6
 
 For API-key / transit-provider routes, Codex Desktop may show a custom model label

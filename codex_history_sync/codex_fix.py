@@ -61,6 +61,15 @@ def _check_config_toml(home, target_provider):
     old_disable = "disable_response_storage" in old
     old_save = "history_save" in old
 
+    # A thread whose session_meta says ``model_provider = "ccs"`` fails to load
+    # when config.toml has no matching ``[model_providers.ccs]`` block, so track
+    # that specifically before we try to fix it below.
+    block_missing = (
+        bool(target_provider)
+        and target_provider != core.OFFICIAL_MODEL_PROVIDER
+        and not core.has_model_provider_block(old, target_provider)
+    )
+
     new = core.normalize_codex_config(old, target_provider=target_provider)
     new = core.sync_model_defaults(new, core.current_model_defaults())
     changed = new != old
@@ -80,6 +89,12 @@ def _check_config_toml(home, target_provider):
          "未配置" if not old_save else "已配置",
          "已确保" if "history_save" in new else "未配置",
          fixed=not old_save)
+    if block_missing:
+        now_present = core.has_model_provider_block(new, target_provider)
+        _add(section, "目标 provider 块",
+             "缺失",
+             "已补全" if now_present else "仍缺失",
+             fixed=now_present)
     return section, changed
 
 
@@ -200,40 +215,72 @@ def _check_rollout_first_lines(home):
     return section, result["repaired"] + result["prepended"] > 0
 
 
-def _clear_skipped_rollouts(home):
-    """Clear the rollout_migration_skipped_rollouts table so Codex Desktop
-    will re-read repaired rollout files."""
-    section = _section("跳过列表清理")
-    state_path = home / "state_5.sqlite"
-    if not state_path.exists():
-        _add(section, "state_5.sqlite 不存在", "—")
-        return section, False
+def _skipped_rollout_db_paths(home):
+    """Databases that may hold ``rollout_migration_skipped_rollouts``.
+
+    Covers the legacy root-level ``state_5.sqlite`` and the newer
+    ``~/.codex/sqlite/*.db`` layout. Backups under ``history-sync-backups`` are
+    never touched, and discovery does not recurse.
+    """
+    home = Path(home)
+    out = []
+    legacy = home / "state_5.sqlite"
+    if legacy.exists():
+        out.append(legacy)
+    for p in repair._db_candidates(home):
+        if p.exists() and p not in out:
+            out.append(p)
+    return out
+
+
+def _clear_skipped_rollouts_in_db(section, db_path):
     import sqlite3
-    con = sqlite3.connect(str(state_path), timeout=10)
-    con.execute("PRAGMA busy_timeout=10000")
+    name = db_path.name
+    try:
+        con = sqlite3.connect(str(db_path), timeout=10)
+        con.execute("PRAGMA busy_timeout=10000")
+    except Exception as exc:
+        _add(section, f"{name} 打开失败", str(exc))
+        return 0
     try:
         tables = [r[0] for r in con.execute(
             "select name from sqlite_master where type='table'").fetchall()]
         if "rollout_migration_skipped_rollouts" not in tables:
-            _add(section, "跳过列表表不存在", "—")
-            return section, False
+            return 0
         before = con.execute(
             "select count(*) from rollout_migration_skipped_rollouts").fetchone()[0]
-        _add(section, "跳过条目", str(before))
         if before > 0:
             con.execute("delete from rollout_migration_skipped_rollouts")
             con.commit()
             after = con.execute(
                 "select count(*) from rollout_migration_skipped_rollouts").fetchone()[0]
-            _add(section, "已清除", f"{before} → {after}", fixed=True)
-        else:
-            _add(section, "无需清除", "0")
-        return section, before > 0
+            _add(section, f"{name} 跳过条目", f"{before} → {after}", fixed=True)
+            return before
+        _add(section, f"{name} 无需清除", "0")
+        return 0
     except Exception as exc:
-        _add(section, "操作失败", str(exc))
-        return section, False
+        _add(section, f"{name} 操作失败", str(exc))
+        return 0
     finally:
         con.close()
+
+
+def _clear_skipped_rollouts(home):
+    """Clear the rollout_migration_skipped_rollouts table across every state DB
+    so Codex Desktop will re-read repaired rollout files. Newer Codex builds
+    keep state under ``~/.codex/sqlite/*.db`` instead of the legacy
+    ``state_5.sqlite``, so both locations are scanned."""
+    section = _section("跳过列表清理")
+    db_paths = _skipped_rollout_db_paths(home)
+    if not db_paths:
+        _add(section, "未找到数据库", "—")
+        return section, False
+    total = 0
+    for db_path in db_paths:
+        total += _clear_skipped_rollouts_in_db(section, db_path)
+    if total == 0 and not section["items"]:
+        _add(section, "跳过列表表不存在", "—")
+    return section, total > 0
 
 
 def _check_tool_calls(home, threshold=50):
